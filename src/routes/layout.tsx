@@ -1,10 +1,8 @@
-import { component$, Slot, useStyles$ } from "@qwik.dev/core";
-import { routeLoader$ } from "@qwik.dev/router";
-
-import Footer from "../components/starter/footer/footer";
-import Header from "../components/starter/header/header";
+import { component$, isServer, Slot, useStyles$ } from "@qwik.dev/core";
+import { RequestHandler, routeLoader$ } from "@qwik.dev/router";
 
 import styles from "./styles.css?inline";
+import { Header } from '~/components/header';
 
 export const useServerTimeLoader = routeLoader$(() => {
   return {
@@ -20,7 +18,28 @@ export default component$(() => {
       <main>
         <Slot />
       </main>
-      <Footer />
     </>
   );
 });
+
+export const getLangFromPath = async (path: string) => {
+  if (!isServer) throw new Error('Server only function');
+
+  const m = path.match(/^\/(en|sr)\//);
+  if (m) {
+    return {
+      path: path.slice(m[0].length - 1),
+      lang: m[1],
+    };
+  }
+
+  return {
+    path,
+    lang: 'sr',
+  };
+};
+
+export const onRequest: RequestHandler = async ({ locale, pathname }) => {
+  const langFromPath = await getLangFromPath(pathname);
+  locale(langFromPath.lang);
+};

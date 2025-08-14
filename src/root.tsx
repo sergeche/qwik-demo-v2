@@ -7,9 +7,11 @@ import {
 } from "@qwik.dev/router";
 
 import "./global.css";
+import { useProvideLocale } from './composables/useLocale';
 
 export default component$(() => {
   useQwikRouter();
+  useProvideLocale()
   const { url } = useLocation();
 
   /**
