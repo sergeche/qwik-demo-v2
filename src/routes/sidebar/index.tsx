@@ -1,5 +1,5 @@
 import { routeLoader$, type DocumentHead } from "@qwik.dev/router";
-import { component$ } from "@qwik.dev/core";
+import { component$, useComputed$, useStore } from "@qwik.dev/core";
 
 interface SidebarItem {
   label: string
@@ -34,17 +34,48 @@ export const usePageData = routeLoader$<PageData>(async event => {
 
 export default component$(() => {
   const pageLoaded = usePageData();
+  const blocks = useComputed$(() => pageLoaded.value);
+  const store = useStore(pageLoaded.value)
+
   return (
     <>
       <h3>Iterate over blocks</h3>
       {pageLoaded.value.blocks.map((block) => {
         if (block.id === 'sidebar') {
-          return <SidebarWrapper key={block.id} block={block}/>;
+          return (
+            <>
+              <SidebarWrapper key={block.id} block={block}/>
+            </>
+          );
         }
       })}
 
-      <h3>Access block directly</h3>
-      <SidebarWrapper block={pageLoaded.value.blocks[0]} />
+      <h3>From store</h3>
+      {store.blocks.map((block) => {
+        if (block.id === 'sidebar') {
+          return (
+            <>
+              <SidebarWrapper key={block.id} block={block} />
+              <button onClick$={() => {
+                block.data[0].label += 'Q'
+                console.log('Modified', block)
+              }}>Modify block</button>
+            </>
+          );
+        }
+      })}
+
+      <h3>Maintain object path</h3>
+      {blocks.value.blocks.map((block, i) => {
+        if (block.id === 'sidebar') {
+          console.log('Block', blocks.value.blocks[i])
+          return (
+            <>
+              <SidebarWrapper key={block.id} block={pageLoaded.value.blocks[i]} />
+            </>
+        );
+        }
+      })}
     </>
   );
 });

@@ -129,7 +129,7 @@ button {
   color: white;
   cursor: pointer;
   font-size: 0.8rem;
-  padding: 15px 20px;
+  padding: 8px;
   text-align: center;
 }
 
@@ -140,14 +140,13 @@ button.button-dark {
 
 a.button.button-small,
 button.button-small {
-  padding: 15px 25px;
+  padding: 4px;
 }
 
 @media screen and (min-width: 768px) {
   a.button,
   button {
     font-size: 1rem;
-    padding: 23px 35px;
   }
 }
 
