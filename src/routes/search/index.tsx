@@ -41,6 +41,7 @@ export const PageContent = component$((props: { data: PageData }) => {
 })
 
 export const ItemList = component$((props: PropsWithItems) => {
+    const { url } = useLocation();
     return (
         <ul>
             {props.items.map((item, index) => (
@@ -54,7 +55,8 @@ export const Filters = component$((props: { prefix: string }) => {
     const { url } = useLocation();
     const appliedPrefixes = useComputed$(() => {
         // Uncomment this line and see the issue:
-        // url.searchParams
+        url.searchParams
+        console.log('Filters recomputed');
         return props.prefix ? [props.prefix] : [];
     })
 
