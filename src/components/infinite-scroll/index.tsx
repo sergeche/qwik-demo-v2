@@ -1,0 +1,288 @@
+import { $, component$, useConstant, useSignal, useTask$, useVisibleTask$ } from '@qwik.dev/core'
+import styles from './infinite-scroll.module.css'
+
+export interface Item {
+    id: number
+    label: string
+}
+
+type ViewModelId = number
+
+interface ViewModelItem {
+    /** Unique item id */
+    id: ViewModelId
+    /** Reference to original item index in item list */
+    index: number
+}
+
+interface ViewModel {
+    /** Items to render in infinite scroll */
+    items: ViewModelItem[]
+    /** Total amount of distinct items to render */
+    totalItems: number
+    /** Internal ID counter */
+    _id: number
+}
+
+interface SyncBeacon {
+    elem: HTMLElement
+    rect: DOMRect
+}
+
+type RebalancedState = ViewModelItem[]
+
+interface Props {
+    items: Item[];
+    /**
+     * Size of the edge in pixels, relative to which we will determine
+     * the need to update the virtual list
+     */
+    edgeSize?: number
+}
+
+export const InfiniteScroll = component$((props: Props) => {
+    const { items, edgeSize = 200 } = props
+    const scrollerRef = useSignal<HTMLDivElement>()
+    const viewModel = useSignal(createView(items))
+    const itemSize = useSignal(0)
+    const syncBeacon = useSignal<SyncBeacon | null>(null)
+    const scrollSkip = useConstant({ skip: 0 })
+
+    const getRendered = $((): string[] => {
+        const scroller = scrollerRef.value
+        if (scroller) {
+            return Array.from(getItemElements(scroller)).map(el => el.dataset.anchor || '')
+        }
+
+        return []
+    })
+
+    const rebalance = $(async () => {
+        const scroller = scrollerRef.value!
+        console.log('run rebalance', { scrollLeft: scroller.scrollLeft, scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth })
+        const anchorElem = getAnchor(scroller)
+        if (anchorElem) {
+            if (!itemSize.value) {
+                itemSize.value = getItemSize(scroller)
+            }
+
+            const anchorId = Number(anchorElem.dataset.anchor)
+            const rebalanced = rebalanceItems(scroller, viewModel.value, anchorId, itemSize.value)
+
+            console.log('Rebalanced', anchorId, rebalanced)
+
+            viewModel.value = {
+                ...viewModel.value,
+                items: rebalanced
+            }
+
+            syncBeacon.value = {
+                elem: anchorElem,
+                rect: anchorElem.getBoundingClientRect()
+            }
+
+            console.log('before sync', await getRendered())
+        }
+    })
+
+    useTask$(({ track }) => {
+        track(() => items)
+        console.log('create view')
+        viewModel.value = createView(items)
+    })
+
+    // eslint-disable-next-line qwik/no-use-visible-task
+    useVisibleTask$(async ({ track }) => {
+        console.log('visible task')
+        track(syncBeacon)
+
+        if (scrollerRef.value) {
+            const scroller = scrollerRef.value
+            if (syncBeacon.value) {
+                const { elem, rect } = syncBeacon.value
+                console.log('do sync', await getRendered())
+                const curRect = elem.getBoundingClientRect()
+                const delta = curRect.left - rect.left
+                const prevScrollLeft = scroller.scrollLeft
+
+                // Update scroll on rAF, this reduces flickering in Safari
+                // (yet makes not so smooth scroll animation)
+                requestAnimationFrame(() => {
+                    scroller.scrollLeft += delta
+                    console.log('adjust delta', {
+                        delta,
+                        rect,
+                        curRect,
+                        prevScrollLeft,
+                        newScrollLeft: scroller.scrollLeft,
+                        scrollWidth: scroller.scrollWidth,
+                        clientWidth: scroller.clientWidth,
+                    })
+                })
+                scrollSkip.skip = 3
+            } else {
+                // Initial render, setup view model
+                console.log('initial render')
+                rebalance()
+                // NB: Qwik delegates events to root, we should handle it on element
+                scroller.addEventListener('scroll', () => {
+                    if (scrollSkip.skip > 0) {
+                        // In Safari, it seems that scroll event is scheduled
+                        // right before we adjust scrollLeft on rebalance, which
+                        // triggers new rebalance with old scroll position but new
+                        // view model. This leads to jagged scrolling experience
+                        // and invalid list of rendered items. To avoid this,
+                        // we skip first scroll event right after rebalance.
+                        scrollSkip.skip--
+                        console.log('skip scroll', scroller.scrollLeft)
+                        return
+                    }
+
+                    console.log('handle scroll')
+                    if (atViewportEdge(scroller, edgeSize)) {
+                        rebalance()
+                    }
+                })
+            }
+        }
+    }, { strategy: 'document-ready' })
+
+    return <div class={styles.container} ref={scrollerRef}>
+        {viewModel.value.items.map(({ id, index }) => {
+            return <InfiniteScrollItem item={items[index]} id={id} key={id}/>
+        })}
+    </div>
+})
+
+export const InfiniteScrollItem = component$(({ item, id }: { item: Item, id: ViewModelId }) => {
+    return <div class={styles.item} data-anchor={id}>
+        <div class={styles.itemContent}>
+            { item.label }
+        </div>
+    </div>
+})
+
+
+/**
+ * Returns the anchor item, relative to which the new
+ * virtual list of items will be built
+ */
+function getAnchor(scroller: HTMLElement): HTMLElement | undefined {
+    const scrollRect = scroller.getBoundingClientRect()
+    const items = getItemElements(scroller)
+
+    // Anchor element is a first visible (even partially) element in viewport
+    for (let i = 0; i < items.length; i++) {
+        const rect = items[i].getBoundingClientRect()
+        if (rect.right > scrollRect.left) {
+            return items[i] as HTMLElement
+        }
+    }
+}
+
+/**
+ * Returns a list of HTML elements representing the items
+ */
+function getItemElements(container: HTMLElement) {
+    return container.getElementsByClassName(styles.item) as HTMLCollectionOf<HTMLElement>
+}
+
+/**
+ * Returns true if scroll is at viewport edge
+ */
+function atViewportEdge(scroller: HTMLElement, edgeSize: number): boolean {
+    const { scrollLeft, scrollWidth, clientWidth } = scroller
+    return scrollLeft < edgeSize
+        || scrollWidth - clientWidth - scrollLeft < edgeSize
+}
+
+/**
+ * Calculates scroll list item size
+ */
+function getItemSize(container: HTMLElement) {
+    const elems = getItemElements(container)
+    // Get scroll item width. Since we may use margins/gaps for spacing,
+    // use fast path to detect item size: just measure distance between left edge
+    // of second element and left edge of scroller
+    const firstElem = elems.item(0)
+    const secondElem = elems.item(1)
+    const containerRect = container.getBoundingClientRect()
+
+    if (secondElem) {
+        const itemRect = secondElem.getBoundingClientRect()
+        return itemRect.left - containerRect.left + container.scrollLeft
+    }
+
+    if (firstElem) {
+        const itemRect = firstElem.getBoundingClientRect()
+        return itemRect.right - containerRect.left + container.scrollLeft
+    }
+
+    return 0
+}
+
+function createView(items: Item[]): ViewModel {
+    let _id = 1
+    return {
+        items: items.map((_, index) => ({ id: _id++, index })),
+        totalItems: items.length,
+        _id
+    }
+}
+
+/**
+ * Rebalances given view model to fill scroll area large enough for infinite scroll.
+ * Returns updated view items list and scroll delta needed to match current viewport
+ */
+function rebalanceItems(
+    container: HTMLElement,
+    model: ViewModel,
+    anchor: ViewModelId,
+    itemSize: number
+): RebalancedState {
+    const baseSize = container.clientWidth
+    const overscrollSize = baseSize * 1 // Maybe make it as option?
+    const { items, totalItems } = model
+
+    // Anchor is a leftmost visible item
+    const anchorIx = items.findIndex(item => item.id === anchor)
+    if (anchorIx === -1) {
+        throw new Error('No anchor found')
+    }
+    const anchorItem = model.items[anchorIx]!
+    const leftItemsCount = Math.ceil(overscrollSize / itemSize)
+    const rightItemsCount = Math.ceil((baseSize + overscrollSize) / itemSize)
+    const leftItems: ViewModelItem[] = []
+    const rightItems: ViewModelItem[] = []
+
+    // Fill left side
+    for (let i = 0; i < leftItemsCount; i++) {
+        let item = items[anchorIx - 1 - i]
+        if (!item) {
+            const originalItem = (anchorItem.index - 1 - i) % totalItems
+            item = {
+                id: model._id++,
+                index: (originalItem + totalItems) % totalItems,
+            }
+        }
+        leftItems.push(item)
+    }
+
+    leftItems.reverse()
+
+    // Fill right side
+    for (let i = 0; i < rightItemsCount; i++) {
+        const item = items[anchorIx + i] || {
+            id: model._id++,
+            index: (anchorItem.index + i) % totalItems,
+        }
+        rightItems.push(item)
+    }
+
+    console.log({
+        leftItems: leftItems.map(item => `${item.id}:${item.index}`),
+        rightItems: rightItems.map(item => `${item.id}:${item.index}`),
+    })
+
+    return leftItems.concat(rightItems)
+}

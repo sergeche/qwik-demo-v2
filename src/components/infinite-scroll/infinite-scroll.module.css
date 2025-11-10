@@ -1,0 +1,41 @@
+.container {
+    display: flex;
+    flex-direction: row;
+    gap: 55px;
+    overflow-x: scroll;
+    scrollbar-width: none;
+    overscroll-behavior: contain;
+    scroll-timeline: --product-list inline;
+    padding: 100px 0;
+    position: relative;
+    /* disable scroll anchoring */
+    overflow-anchor: none;
+}
+
+.item {
+    scroll-snap-align: center;
+    position: relative;
+}
+
+.itemContent {
+    width: 195px;
+    height: 240px;
+    background: red;
+    border-radius: 5px;
+    box-sizing: border-box;
+    padding: 20px;
+    color: #fff;
+    font-size: 30px;
+    will-change: transform, opacity;
+
+    animation: scroll-scale linear;
+    animation-timeline: view(inline 40%);
+    opacity: 0.5;
+    position: relative;
+}
+
+@keyframes scroll-scale {
+    50% {
+        transform: scale(1.4);
+    }
+}
