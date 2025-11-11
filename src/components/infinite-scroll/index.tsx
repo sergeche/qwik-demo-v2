@@ -38,15 +38,25 @@ interface Props {
      * the need to update the virtual list
      */
     edgeSize?: number
+
+    /** Delay before autocentering after scroll */
+    autocenterDelay?: number
 }
 
 export const InfiniteScroll = component$((props: Props) => {
-    const { items, edgeSize = 200 } = props
+    const {
+        items,
+        edgeSize = 200,
+        autocenterDelay = 500
+    } = props
     const scrollerRef = useSignal<HTMLDivElement>()
     const viewModel = useSignal(createView(items))
     const itemSize = useSignal(0)
     const syncBeacon = useSignal<SyncBeacon | null>(null)
-    const scrollSkip = useConstant({ skip: 0 })
+    const scrollState = useConstant({
+        skip: 0,
+        autocenterTimeout: 0
+    })
 
     const getRendered = $((): string[] => {
         const scroller = scrollerRef.value
@@ -85,6 +95,43 @@ export const InfiniteScroll = component$((props: Props) => {
         }
     })
 
+    /**
+     * Automatically centers closest item of scroller.
+     * NB: don’t use CSS scroll-snap since it will break infinite scroll behavior
+     */
+    const autocenter = $(() => {
+        console.log('call autocenter')
+        const scroller = scrollerRef.value
+        const getCenter = (elem: HTMLElement) => {
+            const rect = elem.getBoundingClientRect()
+            return rect.left + rect.width / 2
+        }
+        if (scroller) {
+            const viewportCenter = getCenter(scroller)
+            let closest: HTMLElement | null = null
+            let closestDistance = Number.POSITIVE_INFINITY
+
+            for (const elem of getItemElements(scroller)) {
+                const center = getCenter(elem)
+                const distance = Math.abs(viewportCenter - center)
+                if (distance < closestDistance) {
+                    closestDistance = distance
+                    closest = elem
+                }
+            }
+
+            if (closest && closestDistance > 0) {
+                console.log('closest elem', closestDistance, closest)
+                closest.scrollIntoView({
+                    behavior: 'smooth',
+                    inline: 'center'
+                })
+            }
+        } else {
+            console.log('No scroller?')
+        }
+    })
+
     useTask$(({ track }) => {
         track(() => items)
         console.log('create view')
@@ -119,26 +166,32 @@ export const InfiniteScroll = component$((props: Props) => {
                         clientWidth: scroller.clientWidth,
                     })
                 })
-                scrollSkip.skip = 3
+                scrollState.skip = 3
             } else {
                 // Initial render, setup view model
                 console.log('initial render')
                 rebalance()
+                setTimeout(() => autocenter(), 100)
                 // NB: Qwik delegates events to root, we should handle it on element
                 scroller.addEventListener('scroll', () => {
-                    if (scrollSkip.skip > 0) {
+
+                    clearTimeout(scrollState.autocenterTimeout)
+                    scrollState.autocenterTimeout = window.setTimeout(() => {
+                        autocenter()
+                    }, autocenterDelay)
+
+                    if (scrollState.skip > 0) {
                         // In Safari, it seems that scroll event is scheduled
                         // right before we adjust scrollLeft on rebalance, which
                         // triggers new rebalance with old scroll position but new
                         // view model. This leads to jagged scrolling experience
                         // and invalid list of rendered items. To avoid this,
                         // we skip first scroll event right after rebalance.
-                        scrollSkip.skip--
+                        scrollState.skip--
                         console.log('skip scroll', scroller.scrollLeft)
                         return
                     }
 
-                    console.log('handle scroll')
                     if (atViewportEdge(scroller, edgeSize)) {
                         rebalance()
                     }
