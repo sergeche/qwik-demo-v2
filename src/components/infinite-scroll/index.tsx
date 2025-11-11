@@ -3,7 +3,10 @@ import styles from './infinite-scroll.module.css'
 
 export interface Item {
     id: number
-    label: string
+    title: string
+    price: string
+    image: string
+    bgImage?: string
 }
 
 type ViewModelId = number
@@ -209,8 +212,22 @@ export const InfiniteScroll = component$((props: Props) => {
 
 export const InfiniteScrollItem = component$(({ item, id }: { item: Item, id: ViewModelId }) => {
     return <div class={styles.item} data-anchor={id}>
-        <div class={styles.itemContent}>
-            { item.label }
+        <div class={styles.product}>
+            <a href={`/product/${item.id}`}>
+                <div class={styles.productBg} style={item.bgImage ? `background-image: url('${item.bgImage}');` : undefined}>
+                    <h3>{ item.title }</h3>
+                </div>
+                <div class={styles.productImage}>
+                    <img src={item.image} width={100} height={100} alt="" />
+                </div>
+            </a>
+            <div class={styles.productInfo}>
+                <h4>Akcijska cena:</h4>
+                <div class={styles.productPrice}>{item.price}</div>
+                <div class={styles.productPrevPrice}>Osnovna cena: 1.299,00 RSD</div>
+                <div class={styles.productComment}>Akcija važi od 28. jula do 4. avgusta.</div>
+                <button>Dodaj u korpu</button>
+            </div>
         </div>
     </div>
 })
