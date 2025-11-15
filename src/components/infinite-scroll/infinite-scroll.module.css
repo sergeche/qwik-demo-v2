@@ -5,7 +5,6 @@
     overflow-x: scroll;
     scrollbar-width: none;
     overscroll-behavior: contain;
-    scroll-timeline: --product-list inline;
     padding: 100px 0;
     position: relative;
     /* disable scroll anchoring */
@@ -15,6 +14,19 @@
 .item {
     scroll-snap-align: center;
     position: relative;
+
+    --pos: 0;
+
+    /*
+     Example of how to downscale position to start element transition later on timeline.
+     Math:
+     const offset = 0.4
+     const scaledPos = Math.min(0, (pos - offset) / (1 - offset))
+     In this example, element starts transition when scroll moved 40% inside
+     of hot zone
+    */
+    --scaled-offset: 0.4;
+    --scaled-pos: max(0, calc((var(--pos) - var(--scaled-offset)) / (1 - var(--scaled-offset))));
 }
 
 .itemContent {
@@ -28,9 +40,7 @@
     font-size: 30px;
     will-change: transform, opacity;
 
-    animation: scroll-scale linear;
-    animation-timeline: view(inline 40%);
-    opacity: 0.5;
+    opacity: calc(0.5 + var(--pos) * 0.5);
     position: relative;
 }
 
@@ -58,20 +68,21 @@
     border-radius: 5px;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    width: 140%;
+    height: 140%;
+    left: -20%;
+    top: -20%;
     position: absolute;
     z-index: 1;
     overflow: hidden;
     font-family: Helvetica Neue, sans-serif;
-    font-size: 11px;
-    line-height: 1;
+    font-size: 14px;
+    line-height: 1.4;
     will-change: width, height, left, top, font-size, line-height;
     background-color: #fc7348;
     background-image: url("data:image/svg+xml,%3Csvg width='100' height='20' viewBox='0 0 100 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M21.184 20c.357-.13.72-.264 1.088-.402l1.768-.661C33.64 15.347 39.647 14 50 14c10.271 0 15.362 1.222 24.629 4.928.955.383 1.869.74 2.75 1.072h6.225c-2.51-.73-5.139-1.691-8.233-2.928C65.888 13.278 60.562 12 50 12c-10.626 0-16.855 1.397-26.66 5.063l-1.767.662c-2.475.923-4.66 1.674-6.724 2.275h6.335zm0-20C13.258 2.892 8.077 4 0 4V2c5.744 0 9.951-.574 14.85-2h6.334zM77.38 0C85.239 2.966 90.502 4 100 4V2c-6.842 0-11.386-.542-16.396-2h-6.225zM0 14c8.44 0 13.718-1.21 22.272-4.402l1.768-.661C33.64 5.347 39.647 4 50 4c10.271 0 15.362 1.222 24.629 4.928C84.112 12.722 89.438 14 100 14v-2c-10.271 0-15.362-1.222-24.629-4.928C65.888 3.278 60.562 2 50 2 39.374 2 33.145 3.397 23.34 7.063l-1.767.662C13.223 10.84 8.163 12 0 12v2z' fill='%23f7a9a9' fill-opacity='0.4' fill-rule='evenodd'/%3E%3C/svg%3E");
 
-    animation: product-bg-scroll-active linear;
-    animation-timeline: view(inline 45%);
+    transform: scale(calc(0.6 + 0.4 * var(--pos)));
 }
 
 .productImage {
@@ -84,8 +95,7 @@
     z-index: 2;
     will-change: transform;
 
-    animation: product-image-scroll-active linear;
-    animation-timeline: view(inline 45%);
+    transform: translateY(calc(20px * var(--pos))) scale(calc(1 + var(--pos) * 0.667));
 }
 
 .productImage img {
@@ -107,11 +117,10 @@
     opacity: 0;
     will-change: transform, opacity;
     transform-origin: 50% 0;
-    transform: scale(0.6);
+    transform: translateY(calc(45px * var(--scaled-pos))) scale(calc(0.6 + 0.4 * var(--scaled-pos)));
     color: #000;
 
-    animation: product-info-scroll-active linear;
-    animation-timeline: view(inline 45%);
+    opacity: var(--scaled-pos);
 }
 
 .productPrice {
@@ -144,34 +153,4 @@
     border-radius: 3px;
     appearance: none;
     border: 0;
-}
-
-@keyframes product-image-scroll-active {
-    50% {
-        transform: translateY(20px) scale(1.667);
-    }
-}
-
-@keyframes product-bg-scroll-active {
-    50% {
-        font-size: 14px;
-        width: 140%;
-        height: 140%;
-        left: -20%;
-        top: -20%;
-        line-height: 1.4;
-    }
-}
-
-@keyframes product-info-scroll-active {
-    50% {
-        transform: translateY(45px) scale(1);
-        opacity: 1;
-    }
-}
-
-@keyframes scroll-scale {
-    50% {
-        transform: scale(1.4);
-    }
 }

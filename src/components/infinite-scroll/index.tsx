@@ -44,6 +44,9 @@ interface Props {
 
     /** Delay before autocentering after scroll */
     autocenterDelay?: number
+
+    /** Percentage of scroll area where animation should begin */
+    hotZoneSize?: number
 }
 
 export const InfiniteScroll = component$((props: Props) => {
@@ -135,6 +138,53 @@ export const InfiniteScroll = component$((props: Props) => {
         }
     })
 
+    const updateElements = $(() => {
+        const scroller = scrollerRef.value
+        if (!scroller) {
+            return
+        }
+
+        const { hotZoneSize = 0.4 } = props
+        const scrollRect = scroller.getBoundingClientRect()
+        const width = scrollRect.width
+        const center = scrollRect.left + width / 2
+        const hotZone1 = scrollRect.left + width * hotZoneSize
+        const hotZone2 = scrollRect.left + width * (1 - hotZoneSize)
+        const minHotZone = Math.min(hotZone1, hotZone2)
+        const maxHotZone = Math.max(hotZone1, hotZone2)
+
+        // Create bounding rect lookup in one pass and then update styles
+        // in second pass to avoid extra reflows
+        const rectLookup = new Map<HTMLElement, DOMRect>()
+
+        for (const elem of getItemElements(scroller)) {
+            rectLookup.set(elem, elem.getBoundingClientRect())
+        }
+
+        for (const [elem, rect] of rectLookup) {
+            // Provide 2 properties for convenience:
+            // `fullPos` changes from 0 to 1 from start to the end of hotzone
+            // `pos` changes from 0 to 1 from hot start to center of scroll, and
+            //  from 1 to 0 from center to hot end
+            let pos = 0
+            let fullPos = 0
+            const rectCenter = rect.left + rect.width / 2
+
+            if (rectCenter > minHotZone && rectCenter < maxHotZone) {
+                fullPos = (rectCenter - minHotZone) / (maxHotZone - minHotZone)
+
+                if (rectCenter <= center) {
+                    pos = (rectCenter - minHotZone) / (center - minHotZone)
+                } else  {
+                    pos = 1 - (rectCenter - center) / (maxHotZone - center)
+                }
+            }
+
+            elem.style.setProperty('--pos', String(pos))
+            elem.style.setProperty('--full-pos', String(fullPos))
+        }
+    })
+
     useTask$(({ track }) => {
         track(() => items)
         console.log('create view')
@@ -198,6 +248,8 @@ export const InfiniteScroll = component$((props: Props) => {
                     if (atViewportEdge(scroller, edgeSize)) {
                         rebalance()
                     }
+
+                    requestAnimationFrame(updateElements)
                 })
             }
         }

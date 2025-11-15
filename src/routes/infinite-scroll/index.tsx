@@ -48,6 +48,6 @@ export default component$(() => {
     ]
 
     return <div class="wrapper" style="background:#fff;margin: 10px 0;">
-        <InfiniteScroll items={items} />
+        <InfiniteScroll items={items} hotZoneSize={0.3} />
     </div>
 })
