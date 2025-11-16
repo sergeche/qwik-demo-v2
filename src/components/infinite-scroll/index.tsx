@@ -76,7 +76,6 @@ export const InfiniteScroll = component$((props: Props) => {
     const scrollState = useConstant({
         skip: 0,
         autocenterTimeout: 0,
-        lockAutoscroll: false
     })
 
     const rebalance = $((): SyncBeacon | null => {
@@ -142,6 +141,24 @@ export const InfiniteScroll = component$((props: Props) => {
         }
     })
 
+    /**
+     * Calls callback when all virtual scroll items are actually rendered in DOM.
+     * Used to dirty fix for initial component render, where Qwik may delay actual
+     * DOM flushing after view model is updated to fetch all dependencies.
+     */
+    const whenRendered = $((scroller: HTMLElement, callback: () => void) => {
+        const observer = new MutationObserver(() => {
+            const elementCount = getItemElements(scroller).length
+            const modelCount = viewModel.value.items.length
+            if (elementCount === modelCount) {
+                console.log('Rendered!')
+                observer.disconnect()
+                callback()
+            }
+        })
+        observer.observe(scroller, { childList: true, subtree: true })
+    })
+
     const updateElements = $(() => {
         const scroller = scrollerRef.value
         if (!scroller) {
@@ -190,86 +207,67 @@ export const InfiniteScroll = component$((props: Props) => {
 
     useTask$(({ track }) => {
         track(() => items)
-        console.log('create view')
         viewModel.value = createView(items)
     })
 
     // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(async ({ track }) => {
-        console.log('visible task')
         track(syncBeacon)
 
-        if (scrollerRef.value) {
-            const scroller = scrollerRef.value
-            if (syncBeacon.value) {
-                const { elem, rect } = syncBeacon.value
-                const curRect = elem.getBoundingClientRect()
-                const delta = curRect.left - rect.left
+        const scroller = scrollerRef.value
+        if (!scroller) {
+            return
+        }
 
-                // Update scroll on rAF, this reduces flickering in Safari
-                // (yet makes not so smooth scroll animation)
-                requestAnimationFrame(() => {
-                    scroller.scrollLeft += delta
-                })
-                scrollState.skip = 3
-            } else {
-                // Initial render, setup view model
-                console.log('initial render')
+        if (syncBeacon.value) {
+            const { elem, rect } = syncBeacon.value
+            const curRect = elem.getBoundingClientRect()
+            const delta = curRect.left - rect.left
 
-                const sync = await rebalance()
-
-                const observer = new MutationObserver(() => {
-                    const elementCount = getItemElements(scroller).length
-                    const modelCount = viewModel.value.items.length
-                    if (elementCount === modelCount) {
-                        console.log('Rendered!')
-                        observer.disconnect()
-
-                        if (sync) {
-                            const anchorCenter = getCenter(sync.elem)
-                            const scrollCenter = getCenter(scroller)
-                            const delta = anchorCenter - scrollCenter
-                            if (delta) {
-                                scroller.scrollLeft += delta
-                            }
-                        }
+            // Update scroll on rAF, this reduces flickering in Safari
+            requestAnimationFrame(() => {
+                scroller.scrollLeft += delta
+            })
+            scrollState.skip = 3
+        } else {
+            // Initial render, setup view model
+            const sync = await rebalance()
+            whenRendered(scroller, () => {
+                if (sync) {
+                    const anchorCenter = getCenter(sync.elem)
+                    const scrollCenter = getCenter(scroller)
+                    const delta = anchorCenter - scrollCenter
+                    if (delta) {
+                        scroller.scrollLeft += delta
                     }
-                })
-                observer.observe(scroller, { childList: true, subtree: true })
+                }
+            })
 
+            // NB: Qwik delegates events to root, we should handle it on element
+            scroller.addEventListener('scroll', async () => {
 
+                clearTimeout(scrollState.autocenterTimeout)
+                scrollState.autocenterTimeout = window.setTimeout(() => {
+                    autocenter()
+                }, autocenterDelay)
 
-                // return
-                // setTimeout(() => autocenter(), 100)
-                // NB: Qwik delegates events to root, we should handle it on element
-                scroller.addEventListener('scroll', async () => {
+                requestAnimationFrame(updateElements)
 
-                    clearTimeout(scrollState.autocenterTimeout)
-                    if (!scrollState.lockAutoscroll) {
-                        scrollState.autocenterTimeout = window.setTimeout(() => {
-                            autocenter()
-                        }, autocenterDelay)
-                    }
+                if (scrollState.skip > 0) {
+                    // In Safari, it seems that scroll event is scheduled
+                    // right before we adjust scrollLeft on rebalance, which
+                    // triggers new rebalance with old scroll position but new
+                    // view model. This leads to jagged scrolling experience
+                    // and invalid list of rendered items. To avoid this,
+                    // we skip first scroll event right after rebalance.
+                    scrollState.skip--
+                    return
+                }
 
-                    requestAnimationFrame(updateElements)
-
-                    if (scrollState.skip > 0) {
-                        // In Safari, it seems that scroll event is scheduled
-                        // right before we adjust scrollLeft on rebalance, which
-                        // triggers new rebalance with old scroll position but new
-                        // view model. This leads to jagged scrolling experience
-                        // and invalid list of rendered items. To avoid this,
-                        // we skip first scroll event right after rebalance.
-                        scrollState.skip--
-                        console.log('skip scroll', scroller.scrollLeft)
-                        return
-                    }
-
-                    if (atViewportEdge(scroller, edgeSize)) {
-                        syncBeacon.value = await rebalance()
-                    }
-                })
-            }
+                if (atViewportEdge(scroller, edgeSize)) {
+                    syncBeacon.value = await rebalance()
+                }
+            })
         }
     })
 
