@@ -49,6 +49,20 @@ interface Props {
     hotZoneSize?: number
 }
 
+export interface AnimateScrollOptions {
+    /** Initial scroll position to start */
+    from?: number
+
+    /** Target scroll position */
+    to: number
+
+    /** Animation duration, in ms */
+    duration: number
+
+    /** Callback to run when animation is finished */
+    callback?: (cancel?: boolean) => void
+}
+
 export const InfiniteScroll = component$((props: Props) => {
     const {
         items,
@@ -61,19 +75,11 @@ export const InfiniteScroll = component$((props: Props) => {
     const syncBeacon = useSignal<SyncBeacon | null>(null)
     const scrollState = useConstant({
         skip: 0,
-        autocenterTimeout: 0
+        autocenterTimeout: 0,
+        lockAutoscroll: false
     })
 
-    const getRendered = $((): string[] => {
-        const scroller = scrollerRef.value
-        if (scroller) {
-            return Array.from(getItemElements(scroller)).map(el => el.dataset.anchor || '')
-        }
-
-        return []
-    })
-
-    const rebalance = $(async () => {
+    const rebalance = $((): SyncBeacon | null => {
         const scroller = scrollerRef.value!
         console.log('run rebalance', { scrollLeft: scroller.scrollLeft, scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth })
         const anchorElem = getAnchor(scroller)
@@ -92,13 +98,13 @@ export const InfiniteScroll = component$((props: Props) => {
                 items: rebalanced
             }
 
-            syncBeacon.value = {
+            return {
                 elem: anchorElem,
                 rect: anchorElem.getBoundingClientRect()
             }
-
-            console.log('before sync', await getRendered())
         }
+
+        return null
     })
 
     /**
@@ -108,10 +114,7 @@ export const InfiniteScroll = component$((props: Props) => {
     const autocenter = $(() => {
         console.log('call autocenter')
         const scroller = scrollerRef.value
-        const getCenter = (elem: HTMLElement) => {
-            const rect = elem.getBoundingClientRect()
-            return rect.left + rect.width / 2
-        }
+
         if (scroller) {
             const viewportCenter = getCenter(scroller)
             let closest: HTMLElement | null = null
@@ -119,18 +122,19 @@ export const InfiniteScroll = component$((props: Props) => {
 
             for (const elem of getItemElements(scroller)) {
                 const center = getCenter(elem)
-                const distance = Math.abs(viewportCenter - center)
-                if (distance < closestDistance) {
+                const distance = center - viewportCenter
+                if (Math.abs(distance) < Math.abs(closestDistance)) {
                     closestDistance = distance
                     closest = elem
                 }
             }
 
-            if (closest && closestDistance > 0) {
+            if (closest && closestDistance !== 0) {
                 console.log('closest elem', closestDistance, closest)
-                closest.scrollIntoView({
-                    behavior: 'smooth',
-                    inline: 'center'
+
+                animateScroll(scroller, {
+                    to: scroller.scrollLeft + closestDistance,
+                    duration: 300,
                 })
             }
         } else {
@@ -146,10 +150,9 @@ export const InfiniteScroll = component$((props: Props) => {
 
         const { hotZoneSize = 0.4 } = props
         const scrollRect = scroller.getBoundingClientRect()
-        const width = scrollRect.width
-        const center = scrollRect.left + width / 2
-        const hotZone1 = scrollRect.left + width * hotZoneSize
-        const hotZone2 = scrollRect.left + width * (1 - hotZoneSize)
+        const center = getCenter(scroller)
+        const hotZone1 = scrollRect.left + scrollRect.width * hotZoneSize
+        const hotZone2 = scrollRect.left + scrollRect.width * (1 - hotZoneSize)
         const minHotZone = Math.min(hotZone1, hotZone2)
         const maxHotZone = Math.max(hotZone1, hotZone2)
 
@@ -200,38 +203,55 @@ export const InfiniteScroll = component$((props: Props) => {
             const scroller = scrollerRef.value
             if (syncBeacon.value) {
                 const { elem, rect } = syncBeacon.value
-                console.log('do sync', await getRendered())
                 const curRect = elem.getBoundingClientRect()
                 const delta = curRect.left - rect.left
-                const prevScrollLeft = scroller.scrollLeft
 
                 // Update scroll on rAF, this reduces flickering in Safari
                 // (yet makes not so smooth scroll animation)
                 requestAnimationFrame(() => {
                     scroller.scrollLeft += delta
-                    console.log('adjust delta', {
-                        delta,
-                        rect,
-                        curRect,
-                        prevScrollLeft,
-                        newScrollLeft: scroller.scrollLeft,
-                        scrollWidth: scroller.scrollWidth,
-                        clientWidth: scroller.clientWidth,
-                    })
                 })
                 scrollState.skip = 3
             } else {
                 // Initial render, setup view model
                 console.log('initial render')
-                rebalance()
-                setTimeout(() => autocenter(), 100)
+
+                const sync = await rebalance()
+
+                const observer = new MutationObserver(() => {
+                    const elementCount = getItemElements(scroller).length
+                    const modelCount = viewModel.value.items.length
+                    if (elementCount === modelCount) {
+                        console.log('Rendered!')
+                        observer.disconnect()
+
+                        if (sync) {
+                            const anchorCenter = getCenter(sync.elem)
+                            const scrollCenter = getCenter(scroller)
+                            const delta = anchorCenter - scrollCenter
+                            if (delta) {
+                                scroller.scrollLeft += delta
+                            }
+                        }
+                    }
+                })
+                observer.observe(scroller, { childList: true, subtree: true })
+
+
+
+                // return
+                // setTimeout(() => autocenter(), 100)
                 // NB: Qwik delegates events to root, we should handle it on element
-                scroller.addEventListener('scroll', () => {
+                scroller.addEventListener('scroll', async () => {
 
                     clearTimeout(scrollState.autocenterTimeout)
-                    scrollState.autocenterTimeout = window.setTimeout(() => {
-                        autocenter()
-                    }, autocenterDelay)
+                    if (!scrollState.lockAutoscroll) {
+                        scrollState.autocenterTimeout = window.setTimeout(() => {
+                            autocenter()
+                        }, autocenterDelay)
+                    }
+
+                    requestAnimationFrame(updateElements)
 
                     if (scrollState.skip > 0) {
                         // In Safari, it seems that scroll event is scheduled
@@ -246,14 +266,12 @@ export const InfiniteScroll = component$((props: Props) => {
                     }
 
                     if (atViewportEdge(scroller, edgeSize)) {
-                        rebalance()
+                        syncBeacon.value = await rebalance()
                     }
-
-                    requestAnimationFrame(updateElements)
                 })
             }
         }
-    }, { strategy: 'document-ready' })
+    })
 
     return <div class={styles.container} ref={scrollerRef}>
         {viewModel.value.items.map(({ id, index }) => {
@@ -407,4 +425,67 @@ function rebalanceItems(
     })
 
     return leftItems.concat(rightItems)
+}
+
+export function getCenter(elem: HTMLElement) {
+    const rect = elem.getBoundingClientRect()
+    return rect.left + rect.width / 2
+}
+
+/**
+ * Animated scroll
+ * @returns A function to stop animation
+ */
+export function animateScroll(scroller: Element, options: AnimateScrollOptions): () => void {
+    const { from = scroller.scrollLeft, to, duration } = options
+    const delta = to - from
+    const startPos = scroller.scrollLeft
+    const startTime = Date.now()
+    const easing = duration > 370 ? easeOutExpo : easeOutCubic
+    let stopped = false
+    let rafId: number
+
+    const stop = (cancel?: boolean) => {
+        if (!stopped) {
+            stopped = true
+            cancelAnimationFrame(rafId)
+            options.callback?.(cancel)
+        }
+    };
+
+    const loop = () => {
+        if (stopped) {
+            return
+        }
+
+        const curTime = Math.min(Date.now() - startTime, duration)
+        const offset = delta * easing(curTime, 0, 1, duration)
+        const curPos = Math.floor(startPos + offset)
+        scroller.scrollLeft = curPos
+
+        if (curTime < duration) {
+            rafId = requestAnimationFrame(loop)
+        } else {
+            stop()
+        }
+    };
+
+    rafId = requestAnimationFrame(() => {
+        scroller.scrollLeft = startPos
+        if (delta) {
+            loop()
+        } else {
+            stop()
+        }
+    });
+
+    return stop
+}
+
+export function easeOutCubic(t: number, b: number, c: number, d: number): number {
+    return c * ((t = t / d - 1) * t * t + 1) + b
+}
+
+export function easeOutExpo(t: number, b: number, c: number, d: number): number {
+    return (t == d) ? b + c : c * 1.001 * (-Math.pow(2, -10 * t / d) + 1) + b
 }
