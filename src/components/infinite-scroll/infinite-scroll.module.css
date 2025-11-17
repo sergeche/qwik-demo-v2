@@ -1,4 +1,8 @@
 .container {
+    position: relative;
+}
+
+.scroller {
     display: flex;
     flex-direction: row;
     gap: 55px;
@@ -6,14 +10,28 @@
     scrollbar-width: none;
     overscroll-behavior: contain;
     padding: 100px 0;
-    position: relative;
     /* disable scroll anchoring */
     overflow-anchor: none;
+}
+
+.control {
+    position: absolute;
+    top: 200px;
+    z-index: 2;
+}
+
+.controlLeft {
+    left: 20px;
+}
+
+.controlRight {
+    right: 20px;
 }
 
 .item {
     scroll-snap-align: center;
     position: relative;
+    z-index: 1;
 
     --pos: 0;
 
@@ -27,6 +45,10 @@
     */
     --scaled-offset: 0.4;
     --scaled-pos: max(0, calc((var(--pos) - var(--scaled-offset)) / (1 - var(--scaled-offset))));
+}
+
+.itemActive {
+    background: yellow;
 }
 
 .itemContent {
