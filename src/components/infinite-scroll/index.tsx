@@ -1,13 +1,5 @@
-import { $, component$, useConstant, useSignal, useTask$, useVisibleTask$ } from '@qwik.dev/core'
+import { $, component$, QRL, useConstant, useSignal, useTask$, useVisibleTask$, type JSX } from '@qwik.dev/core'
 import styles from './infinite-scroll.module.css'
-
-export interface Item {
-    id: number
-    title: string
-    price: string
-    image: string
-    bgImage?: string
-}
 
 type ViewModelId = number
 
@@ -34,16 +26,17 @@ interface SyncBeacon {
     scrollLeft: number
 }
 
-interface ScrollListItemProps {
-    item: Item
-    id: ViewModelId
-    active?: boolean
-}
-
 type RebalancedState = ViewModelItem[]
 
-interface Props {
-    items: Item[];
+export type InfiniteListItemRenderer<T> = (item: T, active: boolean, internalId: ViewModelId) => JSX.Element
+
+export interface InfiniteListProps<T> {
+    /** List of items to render */
+    items: T[]
+
+    /** Function to render individual item */
+    render: QRL<InfiniteListItemRenderer<T>>
+
     /**
      * Size of the edge in pixels, relative to which we will determine
      * the need to update the virtual list
@@ -63,7 +56,7 @@ interface Props {
     maxAnimatedScrollSize?: number
 }
 
-export interface AnimateScrollOptions {
+interface AnimateScrollOptions {
     /** Initial scroll position to start */
     from?: number
 
@@ -88,18 +81,24 @@ interface ScrollState {
     animatedScroll?: ((cancel?: boolean) => void) | null
 }
 
-export const InfiniteScroll = component$((props: Props) => {
+export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
     const {
         items,
+        render,
         edgeSize = 200,
-        autocenterDelay = 500
+        autocenterDelay = 500,
+        maxAnimatedScrollSize = 400,
+        hotZoneSize = 0.4,
     } = props
     const scrollerRef = useSignal<HTMLDivElement>()
     const viewModel = useSignal(createView(items))
+    /** Item width  */
     const itemSize = useSignal(0)
+    /** A special object to synchronize scroll position */
     const syncBeacon = useSignal<SyncBeacon | null>(null)
     /** ID of currently active element */
     const activeId = useSignal<ViewModelId>(0)
+    /** Internal scroller state */
     const scrollState = useConstant<ScrollState>({
         skip: 0,
         autocenterTimeout: 0,
@@ -107,7 +106,6 @@ export const InfiniteScroll = component$((props: Props) => {
 
     const rebalance = $((): SyncBeacon | null => {
         const scroller = scrollerRef.value!
-        console.log('run rebalance', { scrollLeft: scroller.scrollLeft, scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth })
         const anchorElem = getAnchor(scroller)
         if (anchorElem) {
             if (!itemSize.value) {
@@ -116,8 +114,6 @@ export const InfiniteScroll = component$((props: Props) => {
 
             const anchorId = getAnchorId(anchorElem)
             const rebalanced = rebalanceItems(scroller, viewModel.value, anchorId, itemSize.value)
-
-            console.log('Rebalanced', anchorId, rebalanced)
 
             viewModel.value = {
                 ...viewModel.value,
@@ -156,16 +152,16 @@ export const InfiniteScroll = component$((props: Props) => {
             return
         }
 
-        options = { ...options }
-        const { maxAnimatedScrollSize = 400 } = props
-
         if (maxAnimatedScrollSize) {
             // Clamp animation travel distance
             const { from = scroller.scrollLeft, to } = options
             let delta = to - from
             if (Math.abs(delta) > maxAnimatedScrollSize) {
                 delta = maxAnimatedScrollSize * (delta < 0 ? -1 : 1)
-                options.from = to - delta
+                options = {
+                    ...options,
+                    from: to - delta
+                }
             }
         }
 
@@ -197,11 +193,8 @@ export const InfiniteScroll = component$((props: Props) => {
         const { items } = viewModel.value
         const ix = items.findIndex(item => item.id === activeId.value)
         if (ix === -1) {
-            console.warn('No active element found')
             return
         }
-
-        console.log('Activate item: found %d of %d', ix, items.length)
 
         const nextItem = items[ix + offset]
         if (!nextItem) {
@@ -215,7 +208,6 @@ export const InfiniteScroll = component$((props: Props) => {
 
         await stopAnimatedScroll()
         activeId.value = nextItem.id
-        console.log('activate item', activeId.value)
     })
 
     /**
@@ -228,8 +220,6 @@ export const InfiniteScroll = component$((props: Props) => {
         if (!scroller || scrollState.animatedScroll) {
             return
         }
-
-        console.log('run autocenter')
 
         const viewportCenter = getCenter(scroller)
         let closest: HTMLElement | null = null
@@ -278,7 +268,6 @@ export const InfiniteScroll = component$((props: Props) => {
             return
         }
 
-        const { hotZoneSize = 0.4 } = props
         const scrollRect = scroller.getBoundingClientRect()
         const center = getCenter(scroller)
         const hotZone1 = scrollRect.left + scrollRect.width * hotZoneSize
@@ -333,7 +322,6 @@ export const InfiniteScroll = component$((props: Props) => {
 
         const activeElem = Array.from(getItemElements(scroller)).find(elem => getAnchorId(elem) === activeId.value)
         if (activeElem) {
-            console.log('Center to', activeId.value)
             const viewportCenter = getCenter(scroller)
             const elemCenter = getCenter(activeElem)
             const delta = elemCenter - viewportCenter
@@ -356,14 +344,11 @@ export const InfiniteScroll = component$((props: Props) => {
         }
 
         if (syncBeacon.value) {
-            const { elem, rect, scrollLeft } = syncBeacon.value
+            const { elem, rect } = syncBeacon.value
             // Update scroll on rAF, this reduces flickering in Safari
             requestAnimationFrame(() => {
                 const curRect = elem.getBoundingClientRect()
                 const delta = curRect.left - rect.left
-                const scrollDelta = scroller.scrollLeft - scrollLeft
-                // console.log('Adjust on rebalance', { scrollLeft: scroller.scrollLeft, delta })
-                console.log('Apply rebalance delta', { scrollLeft: scroller.scrollLeft, delta, scrollDelta })
                 scroller.scrollLeft += delta
             })
             scrollState.skip = 3
@@ -413,34 +398,14 @@ export const InfiniteScroll = component$((props: Props) => {
         <button class={[styles.control, styles.controlRight]} onClick$={() => activateItemWithOffset(1)}>→</button>
         <div class={styles.scroller} ref={scrollerRef}>
             {viewModel.value.items.map(({ id, index }) => {
-                return <InfiniteScrollItem item={items[index]} id={id} active={activeId.value === id} key={id}/>
+                const active = activeId.value === id
+                return <div class={[styles.item, active ? styles.itemActive : '']} data-active={active} data-anchor={id} key={id}>
+                    {render(items[index], active, id)}
+                </div>
             })}
         </div>
     </div>
 })
-
-export const InfiniteScrollItem = component$(({ item, id, active }: ScrollListItemProps) => {
-    return <div class={[styles.item, active ? styles.itemActive : '']} data-active={active} data-anchor={id}>
-        <div class={styles.product}>
-            <a href={`/product/${item.id}`}>
-                <div class={styles.productBg} style={item.bgImage ? `background-image: url('${item.bgImage}');` : undefined}>
-                    <h3>{ item.title }</h3>
-                </div>
-                <div class={styles.productImage}>
-                    <img src={item.image} width={100} height={100} alt="" />
-                </div>
-            </a>
-            <div class={styles.productInfo}>
-                <h4>Akcijska cena:</h4>
-                <div class={styles.productPrice}>{item.price}</div>
-                <div class={styles.productPrevPrice}>Osnovna cena: 1.299,00 RSD</div>
-                <div class={styles.productComment}>Akcija važi od 28. jula do 4. avgusta.</div>
-                <button>Dodaj u korpu</button>
-            </div>
-        </div>
-    </div>
-})
-
 
 /**
  * Returns the anchor item, relative to which the new
@@ -504,7 +469,7 @@ function getItemSize(container: HTMLElement) {
     return 0
 }
 
-function createView(items: Item[]): ViewModel {
+function createView<T>(items: T[]): ViewModel {
     let _id = 1
     return {
         items: items.map((_, index) => ({ id: _id++, index })),
@@ -562,15 +527,10 @@ function rebalanceItems(
         rightItems.push(item)
     }
 
-    console.log({
-        leftItems: leftItems.map(item => `${item.id}:${item.index}`),
-        rightItems: rightItems.map(item => `${item.id}:${item.index}`),
-    })
-
     return leftItems.concat(rightItems)
 }
 
-export function getCenter(elem: HTMLElement) {
+function getCenter(elem: HTMLElement) {
     const rect = elem.getBoundingClientRect()
     return rect.left + rect.width / 2
 }
@@ -606,7 +566,6 @@ function animateScroll(scroller: Element, options: AnimateScrollOptions): () => 
         const offset = delta * easing(curTime, 0, 1, duration)
         const scrollChange = offset - prevOffset
         prevOffset = offset
-        console.log('animate scroll')
         scroller.scrollLeft += scrollChange
 
         if (curTime < duration) {
@@ -615,8 +574,6 @@ function animateScroll(scroller: Element, options: AnimateScrollOptions): () => 
             stop()
         }
     }
-
-    console.log('begin animate', delta)
 
     rafId = requestAnimationFrame(() => {
         scroller.scrollLeft = startPos
@@ -630,10 +587,10 @@ function animateScroll(scroller: Element, options: AnimateScrollOptions): () => 
     return stop
 }
 
-export function easeOutCubic(t: number, b: number, c: number, d: number): number {
+function easeOutCubic(t: number, b: number, c: number, d: number): number {
     return c * ((t = t / d - 1) * t * t + 1) + b
 }
 
-export function easeOutExpo(t: number, b: number, c: number, d: number): number {
+function easeOutExpo(t: number, b: number, c: number, d: number): number {
     return (t == d) ? b + c : c * 1.001 * (-Math.pow(2, -10 * t / d) + 1) + b
 }
