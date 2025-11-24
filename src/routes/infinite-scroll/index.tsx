@@ -1,11 +1,11 @@
 import { $, component$ } from '@qwik.dev/core';
-import { InfiniteScroll } from '~/components/infinite-scroll';
+import { InfiniteList } from '~/components/infinite-scroll-mobile';
 import img1 from '~/assets/p1.webp'
 import img2 from '~/assets/p2.webp'
 import img3 from '~/assets/p3.webp'
 import img4 from '~/assets/p4.webp'
 import img5 from '~/assets/p5.webp'
-import styles from './product.module.css';
+import styles from './product-mobile.module.css';
 
 interface Item {
     id: number
@@ -56,11 +56,10 @@ export default component$(() => {
         },
     ]
 
-    return <div class="wrapper" style="background:#fff;margin: 10px 0;">
-        <InfiniteScroll
+    return <div class="wrapper" style="background:#fff;margin: 10px auto;width: 400px; overflow: hidden;">
+        <InfiniteList
             items={items}
-            render={itemRender}
-            hotZoneSize={0.3} />
+            render={itemRender} />
     </div>
 })
 
