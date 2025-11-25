@@ -86,6 +86,8 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
     const viewModel = useSignal(createView(items))
     /** A special object to synchronize scroll position */
     const syncBeacon = useSignal<SyncBeacon | null>(null)
+    /** Anchor element: the one that closer to center */
+    const anchor = useSignal<HTMLElement | null>(null)
     /** ID of currently active element */
     const activeId = useSignal<ViewModelId>(0)
     /** Internal scroller state */
@@ -97,9 +99,8 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
     const rebalance = $((): SyncBeacon | null => {
         console.log('rebalance', viewModel.value.items)
         const scroller = scrollerRef.value!
-        const anchorElem = getAnchor(scroller)
-        if (anchorElem) {
-            const anchorId = getAnchorId(anchorElem)
+        if (anchor.value) {
+            const anchorId = getAnchorId(anchor.value)
             const rebalanced = rebalanceItems(viewModel.value, anchorId)
             console.log('rebalanced', rebalanced)
             const curItems = viewModel.value.items
@@ -118,8 +119,8 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
 
             return {
                 id: anchorId,
-                elem: anchorElem,
-                rect: anchorElem.getBoundingClientRect(),
+                elem: anchor.value,
+                rect: anchor.value.getBoundingClientRect(),
                 scrollLeft: scroller.scrollLeft
             }
         }
@@ -134,7 +135,7 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
         if (scroller && !scrollState.isScrolling && !scrollState.isTouching) {
             syncBeacon.value = await rebalance()
             if (syncBeacon.value) {
-                activeId.value = syncBeacon.value!.id
+                activeId.value = syncBeacon.value.id
             }
         }
     })
@@ -276,6 +277,18 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
         }
     })
 
+    const isAnchor = (item: any) => {
+        if (anchor.value) {
+            const anchorId = getAnchorId(anchor.value)
+            const modelItem = viewModel.value.items.find(item => item.id === anchorId)
+            if (modelItem) {
+                return items.indexOf(item) === modelItem.index
+            }
+        }
+
+        return false
+    }
+
     useTask$(({ track }) => {
         track(() => items)
         viewModel.value = createView(items)
@@ -334,6 +347,7 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
             })
         } else {
             // Initial render, setup view model
+            anchor.value = getAnchor(scroller)
             const sync = await rebalance()
             whenRendered(scroller, () => {
                 if (sync) {
@@ -358,9 +372,11 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
 
                     scrollState.isScrolling = false
                     rebalanceWhenNeeded()
-                }, 150)
+                }, 200)
 
-                requestAnimationFrame(updateElements)
+                // Always update anchor during scroll
+                anchor.value = getAnchor(scroller)
+                updateElements()
             })
 
             scroller.addEventListener('touchstart', () => {
@@ -382,27 +398,40 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
                     {render(items[index], active, id)}
                 </div>
             })}
+
+            <div class={styles.indicators}>
+                {items.map((item, ix) => <div class={[styles.indicator, isAnchor(item) && styles.indicatorActive]} key={ix}></div>)}
+            </div>
         </div>
     </div>
 })
 
 /**
- * Returns the anchor item, relative to which the new
- * virtual list of items will be built
+ * Returns the anchor item, relative to which the new virtual list of items
+ * will be built. In current implementation, anchor is closest to center of viewport.
  */
-function getAnchor(scroller: HTMLElement): HTMLElement | undefined {
-    const scrollRect = scroller.getBoundingClientRect()
+function getAnchor(scroller: HTMLElement): HTMLElement | null {
     const items = getItemElements(scroller)
+    const scrollCenter = getCenter(scroller)
+    let closestItem: HTMLElement | null = null
+    let minDistance = Number.POSITIVE_INFINITY
 
-    // Anchor element is a first visible (even partially) element in viewport
-    for (let i = 0; i < items.length; i++) {
-        const rect = items[i].getBoundingClientRect()
-        if (rect.right > scrollRect.left) {
-            return items[i] as HTMLElement
+    for (const item of items) {
+        const itemCenter = getCenter(item)
+        const distance = Math.abs(itemCenter - scrollCenter)
+
+        if (distance < minDistance) {
+            minDistance = distance
+            closestItem = item
         }
     }
+
+    return closestItem
 }
 
+/**
+ * Returns given elements’ internal ID
+ */
 function getAnchorId(elem: HTMLElement): ViewModelId {
     return Number(elem.dataset.anchor)
 }
