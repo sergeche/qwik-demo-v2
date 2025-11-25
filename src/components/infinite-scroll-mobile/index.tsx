@@ -108,12 +108,16 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
         const scroller = scrollerRef.value!
         if (anchor.value) {
             const anchorId = getAnchorId(anchor.value)
+            console.log('rebalance around anchor', anchorId)
             const rebalanced = rebalanceItems(viewModel.value, anchorId, offscreenItems)
 
             viewModel.value = {
                 ...viewModel.value,
                 items: rebalanced
             }
+
+            console.log('rebalance result', viewModel.value.items)
+
             // Disable scroll snapping during view model update to avoid
             // misaligned scroll in Safari iOS
             disableScrollSnapping(scroller)
@@ -134,8 +138,9 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
         // TODO scroll snapping should be enabled. Check if anchor item
         // is center-snapped
         if (scroller && !scrollState.isScrolling && !scrollState.isTouching && atViewportEdge(scroller, scroller.clientWidth)) {
-            console.log('rebalance when needed')
+            console.log('rebalance when needed', anchor.value)
             syncBeacon.value = await rebalance()
+            console.log('rebalance sync beacon', syncBeacon.value)
             if (syncBeacon.value) {
                 activeId.value = syncBeacon.value.id
             }
@@ -318,6 +323,11 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
         }
     })
 
+    useVisibleTask$(({ track }) => {
+        track(viewModel)
+        console.log('view model updated', viewModel.value.items, getRenderedItems(scrollerRef.value!))
+    })
+
     // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(async ({ track }) => {
         track(syncBeacon)
@@ -335,10 +345,16 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
             requestAnimationFrame(() => {
                 const curRect = elem.getBoundingClientRect()
                 const delta = curRect.left - rect.left
+                console.log('check sync scroll after rebalance', { delta })
+                console.log('items', viewModel.value.items, getRenderedItems(scrollerRef.value!))
                 if (delta) {
+                    console.log('adjust scroll after rebalance', delta)
                     scroller.scrollLeft += delta
                 }
-                enableScrollSnapping(scroller)
+                // Enable scroll snapping on next tick to avoid misaligned scroller in Safari iOS
+                setTimeout(() => {
+                    enableScrollSnapping(scroller)
+                }, 1)
             })
         } else {
             // Initial render, setup view model
@@ -363,9 +379,10 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
                 scrollState.isScrolling = true
                 clearTimeout(scrollState.scrollEndTimeout)
                 scrollState.scrollEndTimeout = window.setTimeout(() => {
+                    console.log('scroll end', scroller.scrollLeft)
                     scrollState.isScrolling = false
                     rebalanceWhenNeeded()
-                }, 200)
+                }, 300)
 
                 // Always update anchor during scroll
                 anchor.value = getAnchor(scroller)
@@ -589,4 +606,8 @@ function easeOutCubic(t: number, b: number, c: number, d: number): number {
 
 function easeOutExpo(t: number, b: number, c: number, d: number): number {
     return (t == d) ? b + c : c * 1.001 * (-Math.pow(2, -10 * t / d) + 1) + b
+}
+
+function getRenderedItems(scroller: HTMLElement): string[] {
+    return Array.from(getItemElements(scroller)).map(elem => elem.dataset.anchor || '')
 }
