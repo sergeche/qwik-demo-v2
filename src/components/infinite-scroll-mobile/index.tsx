@@ -75,7 +75,7 @@ interface ScrollState {
     animatedScroll?: ((cancel?: boolean) => void) | null
 }
 
-export const InfiniteList = component$<InfiniteListProps<any>>(props => {
+export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
     const {
         items,
         render,
@@ -102,12 +102,10 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
         if (anchor.value) {
             const anchorId = getAnchorId(anchor.value)
             const rebalanced = rebalanceItems(viewModel.value, anchorId)
-            console.log('rebalanced', rebalanced)
             const curItems = viewModel.value.items
 
             // Quick check if we need to rebuild model
             if (!rebalanced.every((item, i) => item.index === curItems[i]?.index)) {
-                console.log('update view model')
                 viewModel.value = {
                     ...viewModel.value,
                     items: rebalanced
@@ -167,8 +165,6 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
             }
         }
 
-        console.log('animated scroll options', options)
-
         // Cancel active animation, if any
         await stopAnimatedScroll()
 
@@ -179,7 +175,6 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
             ...options,
             callback(cancel) {
                 if (scrollState.animatedScroll === stop) {
-                    console.log('animated scroll finished')
                     scrollState.animatedScroll = null
                     enableScrollSnapping(scroller)
                 }
@@ -332,15 +327,11 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
             // Assuming that rebalance and scroll sync happens when scroll
             // is completely stopped
             const { elem, rect } = syncBeacon.value
-            const renderedElements = Array.from(getItemElements(scroller)).map(elem => getAnchorId(elem))
-            console.log('sync beacon updated', scroller.scrollLeft, renderedElements)
             // Update scroll on rAF, this reduces flickering in Safari
             requestAnimationFrame(() => {
                 const curRect = elem.getBoundingClientRect()
                 const delta = curRect.left - rect.left
-                console.log('sync scroll position', { delta })
                 if (delta) {
-                    console.log('update scroll position', { delta })
                     scroller.scrollLeft += delta
                 }
                 enableScrollSnapping(scroller)
@@ -364,12 +355,9 @@ export const InfiniteList = component$<InfiniteListProps<any>>(props => {
 
             // NB: Qwik delegates events to root, we should handle it on element
             scroller.addEventListener('scroll', async () => {
-                clearTimeout(scrollState.scrollEndTimeout)
                 scrollState.isScrolling = true
+                clearTimeout(scrollState.scrollEndTimeout)
                 scrollState.scrollEndTimeout = window.setTimeout(() => {
-                    const renderedElements = Array.from(getItemElements(scroller)).map(elem => getAnchorId(elem))
-                    console.log('scroll end', scroller.scrollLeft, renderedElements)
-
                     scrollState.isScrolling = false
                     rebalanceWhenNeeded()
                 }, 200)
