@@ -58,20 +58,21 @@ const items: Item[] = [
 ]
 
 export default component$(() => {
-    const showMobile = false;
+    const showDesktop = false;
+    const showMobile = true;
     return <>
-        <div style="padding:20px;">
-            <h2>Infinite Scroll - Desktop</h2>
+        {showDesktop && <div style="padding:20px;">
             <div style="background:#fff;margin: 10px 0;overflow: hidden;">
                 <InfiniteScrollDesktop items={items}
                     render={itemRenderDesktop} />
             </div>
-        </div>
-        {showMobile && <div style="padding:20px;">
-            <h2>Infinite Scroll - Mobile</h2>
-
+        </div>}
+        {showMobile && <div>
             <div style="background:#fff;margin: 10px auto;width: 400px; overflow: hidden;">
-                <InfiniteScrollMobile items={items} render={itemRenderMobile} />
+                <InfiniteScrollMobile
+                    items={items}
+                    render={itemRenderMobile}
+                    offscreenItems={items.length} />
             </div>
         </div>}
     </>

@@ -38,6 +38,12 @@ export interface InfiniteListProps<T> {
     render: QRL<InfiniteListItemRenderer<T>>
 
     /**
+     * Amount of items to render offscreen (before and after visible one).
+     * @default 1
+     */
+    offscreenItems?: number
+
+    /**
      * Max length of animated scroll distance. Use this properly to limit the
      * distance animation should travel to make animation snappy and smooth
      */
@@ -80,6 +86,7 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
         items,
         render,
         maxAnimatedScrollSize = 400,
+        offscreenItems = 1
     } = props
 
     const scrollerRef = useSignal<HTMLDivElement>()
@@ -101,19 +108,15 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
         const scroller = scrollerRef.value!
         if (anchor.value) {
             const anchorId = getAnchorId(anchor.value)
-            const rebalanced = rebalanceItems(viewModel.value, anchorId)
-            const curItems = viewModel.value.items
+            const rebalanced = rebalanceItems(viewModel.value, anchorId, offscreenItems)
 
-            // Quick check if we need to rebuild model
-            if (!rebalanced.every((item, i) => item.index === curItems[i]?.index)) {
-                viewModel.value = {
-                    ...viewModel.value,
-                    items: rebalanced
-                }
-                // Disable scroll snapping during view model update to avoid
-                // misaligned scroll in Safari iOS
-                disableScrollSnapping(scroller)
+            viewModel.value = {
+                ...viewModel.value,
+                items: rebalanced
             }
+            // Disable scroll snapping during view model update to avoid
+            // misaligned scroll in Safari iOS
+            disableScrollSnapping(scroller)
 
             return {
                 id: anchorId,
@@ -130,7 +133,8 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
         const scroller = scrollerRef.value
         // TODO scroll snapping should be enabled. Check if anchor item
         // is center-snapped
-        if (scroller && !scrollState.isScrolling && !scrollState.isTouching) {
+        if (scroller && !scrollState.isScrolling && !scrollState.isTouching && atViewportEdge(scroller, scroller.clientWidth)) {
+            console.log('rebalance when needed')
             syncBeacon.value = await rebalance()
             if (syncBeacon.value) {
                 activeId.value = syncBeacon.value.id
@@ -350,6 +354,7 @@ export const InfiniteScroll = component$<InfiniteListProps<any>>(props => {
                         scroller.scrollLeft += delta
                     }
                     activeId.value = sync.id
+                    enableScrollSnapping(scroller)
                 }
             })
 
@@ -432,6 +437,15 @@ function getItemElements(container: HTMLElement) {
 }
 
 /**
+ * Returns true if scroll is at viewport edge
+ */
+function atViewportEdge(scroller: HTMLElement, edgeSize: number): boolean {
+    const { scrollLeft, scrollWidth, clientWidth } = scroller
+    return scrollLeft < edgeSize
+        || scrollWidth - clientWidth - scrollLeft < edgeSize
+}
+
+/**
  * Creates initial view model
  */
 function createView<T>(items: T[]): ViewModel {
@@ -453,6 +467,7 @@ function createView<T>(items: T[]): ViewModel {
 function rebalanceItems(
     model: ViewModel,
     anchor: ViewModelId,
+    itemsCount: number,
 ): RebalancedState {
     const { items, totalItems } = model
 
@@ -463,19 +478,31 @@ function rebalanceItems(
     }
 
     const normalizeIndex = (ix: number) => (ix + totalItems) % totalItems
+    const anchorItem = model.items[anchorIx]!
+    const leftItems: ViewModelItem[] = []
+    const rightItems: ViewModelItem[] = []
 
-    const currentItem = model.items[anchorIx]!
-    const prevItem = model.items[anchorIx - 1] || {
-        id: model._id++,
-        index: normalizeIndex(currentItem.index - 1),
+    // Fill left side
+    for (let i = 0; i < itemsCount; i++) {
+        const item = items[anchorIx - 1 - i] || {
+            id: model._id++,
+            index: normalizeIndex(anchorItem.index - 1 - i),
+        }
+        leftItems.push(item)
     }
 
-    const nextItem = items[anchorIx + 1] || {
-        id: model._id++,
-        index: normalizeIndex(currentItem.index + 1),
+    leftItems.reverse()
+
+    // Fill right side
+    for (let i = 0; i < itemsCount; i++) {
+        const item = items[anchorIx + i] || {
+            id: model._id++,
+            index: normalizeIndex(anchorItem.index + i),
+        }
+        rightItems.push(item)
     }
 
-    return [prevItem, currentItem, nextItem]
+    return leftItems.concat(rightItems)
 }
 
 function getCenter(elem: HTMLElement) {
@@ -543,11 +570,17 @@ function animateScroll(scroller: Element, options: AnimateScrollOptions): () => 
 }
 
 function disableScrollSnapping(scroller: HTMLElement) {
-    scroller.classList.add(styles._disable_snapping)
+    if (styles._disable_snapping) {
+        console.log('disable scroll snapping')
+        scroller.classList.add(styles._disable_snapping)
+    }
 }
 
 function enableScrollSnapping(scroller: HTMLElement) {
-    scroller.classList.remove(styles._disable_snapping)
+    if (styles._disable_snapping) {
+        console.log('enable scroll snapping')
+        scroller.classList.remove(styles._disable_snapping)
+    }
 }
 
 function easeOutCubic(t: number, b: number, c: number, d: number): number {
