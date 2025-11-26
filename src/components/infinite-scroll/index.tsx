@@ -18,7 +18,10 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
         offscreenItems = 1,
     } = props
 
-    const isMobile = useSignal<boolean>(props.mobile ?? false)
+    const autoIsMobile = useSignal(false)
+    const isMobile = useComputed$(() => {
+        return props.mobile !== undefined ? props.mobile : autoIsMobile.value
+    })
 
     /** Reference to scroller element */
     const scrollerRef = useSignal<HTMLDivElement>()
@@ -346,6 +349,12 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
             scroller.addEventListener('touchend', () => {
                 scrollState.isTouching = false
             })
+
+            // Detect mobile screen size
+            const mediaQuery = window.matchMedia('(max-width: 500px)')
+            const updateMobileState = () => autoIsMobile.value = mediaQuery.matches
+            updateMobileState()
+            mediaQuery.addEventListener('change', updateMobileState)
         }
     })
 
