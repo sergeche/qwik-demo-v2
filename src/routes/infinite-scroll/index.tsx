@@ -79,47 +79,23 @@ export default component$(() => {
 })
 
 const itemRender = $((item: Item, active: boolean, mobile: boolean) => {
-    return mobile
-        ? <ListItemMobile item={item} active={active} />
-        : <ListItemDesktop item={item} active={active} />
-})
-
-export const ListItemDesktop = component$(({ item }: { item: Item, active: boolean }) => {
-    return <div class={stylesDesktop.product}>
+    const styles = mobile ? stylesMobile : stylesDesktop;
+    return <div class={styles.product}>
         <a href={`/product/${item.id}`}>
-            <div class={stylesDesktop.productBg} style={item.bgImage ? `background-image: url('${item.bgImage}');` : undefined}>
+            <div class={styles.productBg} style={item.bgImage ? `background-image: url('${item.bgImage}');` : undefined}>
                 <h3>{item.title}</h3>
             </div>
-            <div class={stylesDesktop.productImage}>
+            <div class={styles.productImage}>
                 <img src={item.image} width={100} height={100} alt="" />
             </div>
         </a>
-        <div class={stylesDesktop.productInfo}>
+        <div class={styles.productInfo}>
             <h4>Akcijska cena:</h4>
-            <div class={stylesDesktop.productPrice}>{item.price}</div>
-            <div class={stylesDesktop.productPrevPrice}>Osnovna cena: 1.299,00 RSD</div>
-            <div class={stylesDesktop.productComment}>Akcija važi od 28. jula do 4. avgusta.</div>
+            <div class={styles.productPrice}>{item.price}</div>
+            <div class={styles.productPrevPrice}>Osnovna cena: 1.299,00 RSD</div>
+            <div class={styles.productComment}>Akcija važi od 28. jula do 4. avgusta.</div>
             <button>Dodaj u korpu</button>
         </div>
     </div>
 })
 
-export const ListItemMobile = component$(({ item }: { item: Item, active: boolean }) => {
-    return <div class={stylesMobile.product}>
-        <a href={`/product/${item.id}`}>
-            <div class={stylesMobile.productBg} style={item.bgImage ? `background-image: url('${item.bgImage}');` : undefined}>
-                <h3>{item.title}</h3>
-            </div>
-            <div class={stylesMobile.productImage}>
-                <img src={item.image} width={100} height={100} alt="" />
-            </div>
-        </a>
-        <div class={stylesMobile.productInfo}>
-            <h4>Akcijska cena:</h4>
-            <div class={stylesMobile.productPrice}>{item.price}</div>
-            <div class={stylesMobile.productPrevPrice}>Osnovna cena: 1.299,00 RSD</div>
-            <div class={stylesMobile.productComment}>Akcija važi od 28. jula do 4. avgusta.</div>
-            <button>Dodaj u korpu</button>
-        </div>
-    </div>
-})

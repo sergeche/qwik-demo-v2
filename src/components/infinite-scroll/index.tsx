@@ -194,31 +194,25 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
     const autocenter = $(() => {
         const scroller = scrollerRef.value
 
-        if (!scroller || scrollState.animatedScroll) {
+        if (!scroller || !anchor.value || scrollState.animatedScroll) {
             return
         }
 
-        const viewportCenter = getCenter(scroller)
-        let closest: HTMLElement | null = null
-        let closestDistance = Number.POSITIVE_INFINITY
+        const distance = getCenter(anchor.value) - getCenter(scroller)
+        const id = getAnchorId(anchor.value)
 
-        for (const elem of getItemElements(scroller)) {
-            const center = getCenter(elem)
-            const distance = center - viewportCenter
-            if (Math.abs(distance) < Math.abs(closestDistance)) {
-                closestDistance = distance
-                closest = elem
-            }
-        }
-
-        if (closest) {
-            activeId.value = getAnchorId(closest)
-            if (Math.abs(closestDistance) > 1) {
-                startAnimatedScroll({
-                    to: scroller.scrollLeft + closestDistance,
-                    duration: 300,
-                })
-            }
+        if (Math.abs(distance) > 1) {
+            startAnimatedScroll({
+                to: scroller.scrollLeft + distance,
+                duration: 300,
+                callback(cancel) {
+                    if (!cancel) {
+                        activeId.value = id
+                    }
+                },
+            })
+        } else {
+            activeId.value = id
         }
     })
 
@@ -259,9 +253,7 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
 
         const activeElem = Array.from(getItemElements(scroller)).find(elem => getAnchorId(elem) === activeId.value)
         if (activeElem) {
-            const viewportCenter = getCenter(scroller)
-            const elemCenter = getCenter(activeElem)
-            const delta = elemCenter - viewportCenter
+            const delta = getCenter(activeElem) - getCenter(scroller)
             if (delta) {
                 startAnimatedScroll({
                     to: scroller.scrollLeft + delta,
