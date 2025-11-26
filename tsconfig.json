@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "outDir": "tmp",
     "noEmit": true,
+    "verbatimModuleSyntax": true,
     "paths": {
       "~/*": ["./src/*"]
     },

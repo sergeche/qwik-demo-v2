@@ -1,6 +1,5 @@
 import { $, component$ } from '@qwik.dev/core';
-import { InfiniteScroll as InfiniteScrollDesktop } from '~/components/infinite-scroll';
-import { InfiniteScroll as InfiniteScrollMobile } from '~/components/infinite-scroll-mobile';
+import { InfiniteScroll } from '~/components/infinite-scroll';
 import img1 from '~/assets/p1.webp'
 import img2 from '~/assets/p2.webp'
 import img3 from '~/assets/p3.webp'
@@ -58,32 +57,31 @@ const items: Item[] = [
 ]
 
 export default component$(() => {
-    const showDesktop = false;
+    const showDesktop = true;
     const showMobile = true;
     return <>
         {showDesktop && <div style="padding:20px;">
             <div style="background:#fff;margin: 10px 0;overflow: hidden;">
-                <InfiniteScrollDesktop items={items}
-                    render={itemRenderDesktop} />
+                <InfiniteScroll items={items}
+                    render={itemRender} />
             </div>
         </div>}
         {showMobile && <div>
             <div style="background:#fff;margin: 10px auto;width: 400px; overflow: hidden;">
-                <InfiniteScrollMobile
+                <InfiniteScroll
+                    mobile={true}
                     items={items}
-                    render={itemRenderMobile}
+                    render={itemRender}
                     offscreenItems={items.length} />
             </div>
         </div>}
     </>
 })
 
-const itemRenderDesktop = $((item: Item, active: boolean) => {
-    return <ListItemDesktop item={item} active={active} />
-})
-
-const itemRenderMobile = $((item: Item, active: boolean) => {
-    return <ListItemMobile item={item} active={active} />
+const itemRender = $((item: Item, active: boolean, mobile: boolean) => {
+    return mobile
+        ? <ListItemMobile item={item} active={active} />
+        : <ListItemDesktop item={item} active={active} />
 })
 
 export const ListItemDesktop = component$(({ item }: { item: Item, active: boolean }) => {

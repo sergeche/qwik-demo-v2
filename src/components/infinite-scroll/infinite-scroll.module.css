@@ -5,19 +5,27 @@
 .scroller {
     display: flex;
     flex-direction: row;
-    gap: 55px;
     overflow-x: scroll;
     scrollbar-width: none;
     overscroll-behavior: contain;
-    padding: 100px 0;
+
     /* disable scroll anchoring */
     overflow-anchor: none;
+}
+
+.scroller._mobile:not(._disable_snapping) {
+    scroll-snap-type: x mandatory;
+}
+
+.scroller._desktop {
+    padding: 100px 0;
+    gap: 55px;
 }
 
 .control {
     position: absolute;
     top: 200px;
-    z-index: 2;
+    z-index: 3;
 }
 
 .controlLeft {
@@ -29,10 +37,10 @@
 }
 
 .item {
-    scroll-snap-align: center;
-    position: relative;
-    z-index: 1;
-
+    /*
+     This var is updated according to scroll position, from 0 to 1.
+     1 means that the item is in the center of the scroller viewport
+    */
     --pos: 0;
 
     /*
@@ -47,21 +55,38 @@
     --scaled-pos: max(0, calc((var(--pos) - var(--scaled-offset)) / (1 - var(--scaled-offset))));
 }
 
-.itemActive {
-    /* background: yellow; */
+.item._desktop {
+    position: relative;
+    z-index: 1;
 }
 
-.itemContent {
-    width: 195px;
-    height: 240px;
-    background: red;
-    border-radius: 5px;
-    box-sizing: border-box;
-    padding: 20px;
-    color: #fff;
-    font-size: 30px;
-    will-change: transform, opacity;
+.item._mobile {
+    flex-shrink: 0;
+    width: 100%;
+    height: 100%;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+}
 
-    opacity: calc(0.5 + var(--pos) * 0.5);
-    position: relative;
+.indicators {
+    position: absolute;
+    top: 250px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: gray;
+    transition: width 0.15s linear;
+}
+
+.indicatorActive {
+    width: 20px;
 }
