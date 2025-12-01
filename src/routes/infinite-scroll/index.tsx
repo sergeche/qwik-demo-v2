@@ -62,8 +62,11 @@ export default component$(() => {
     return <>
         {showDesktop && <div style="padding:20px;">
             <div style="background:#fff;margin: 10px 0;overflow: hidden;">
-                <InfiniteScroll items={items}
-                    render={itemRender} />
+                <InfiniteScroll
+                    items={items}
+                    render={itemRender}
+                    allowRootFocus={false}
+                />
             </div>
         </div>}
         {showMobile && <div>
@@ -72,16 +75,23 @@ export default component$(() => {
                     mobile={true}
                     items={items}
                     render={itemRender}
-                    offscreenItems={items.length} />
+                    offscreenItems={items.length}
+                />
             </div>
         </div>}
     </>
 })
 
 const itemRender = $((item: Item, active: boolean, mobile: boolean) => {
+    return <ListComponent item={item} active={active} mobile={mobile} />
+})
+
+const ListComponent = component$((
+    { item, active, mobile }: { item: Item, active: boolean, mobile: boolean }
+) => {
     const styles = mobile ? stylesMobile : stylesDesktop;
     return <div class={styles.product}>
-        <a href={`/product/${item.id}`}>
+        <a href={`/product/${item.id}`} tabIndex={active ? 0 : -1}>
             <div class={styles.productBg} style={item.bgImage ? `background-image: url('${item.bgImage}');` : undefined}>
                 <h3>{item.title}</h3>
             </div>
@@ -94,7 +104,7 @@ const itemRender = $((item: Item, active: boolean, mobile: boolean) => {
             <div class={styles.productPrice}>{item.price}</div>
             <div class={styles.productPrevPrice}>Osnovna cena: 1.299,00 RSD</div>
             <div class={styles.productComment}>Akcija važi od 28. jula do 4. avgusta.</div>
-            <button>Dodaj u korpu</button>
+            <button tabIndex={active ? 0 : -1}>Dodaj u korpu</button>
         </div>
     </div>
 })

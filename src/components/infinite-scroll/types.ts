@@ -73,6 +73,17 @@ export interface InfiniteScrollProps<T> {
      * distance animation should travel to make animation snappy and smooth
      */
     maxAnimatedScrollSize?: number
+
+    /**
+     * If set, allows user to focus on scroller root with Tab key and read its
+     * label by screen readers. User then have to use Enter key to activate
+     * focused item and use arrows to navigate.
+     * If `false`, user will focus directly on active item.
+     */
+    allowRootFocus?: boolean
+
+    /** Value for `aria-label` attribute on the scroller root element */
+    ariaLabel?: string
 }
 
 export interface AnimateScrollOptions {

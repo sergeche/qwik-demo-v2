@@ -2,6 +2,7 @@ import { $, component$, useComputed$, useConstant, useSignal, useTask$, useVisib
 import styles from './infinite-scroll.module.css'
 import { animateScroll, createView, getAnchor, getAnchorId, getCenter, getItemElements, getItemSize, rebalanceItems, updateScrollAnimationState, whenRendered } from './shared'
 import type { AnimateScrollOptions, InfiniteScrollProps, RebalanceStrategy, ScrollState, SyncBeacon, ViewModel, ViewModelId } from './types'
+import { getFocusableElements, getFocusedElement, isFocusVisible } from './a11y'
 
 const scrollEndDelay = 250
 
@@ -16,6 +17,7 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
         maxAnimatedScrollSize = 400,
         hotZoneSize = 0.4,
         offscreenItems = 1,
+        allowRootFocus,
     } = props
 
     const autoIsMobile = useSignal(false)
@@ -44,6 +46,7 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
         skip: 0,
         scrollEndTimeout: 0,
     })
+    const focusedFromKeyboard = useSignal(false)
     const platformClass = useComputed$(() => isMobile.value ? styles._mobile : styles._desktop)
 
     const rebalance = $((): SyncBeacon | null => {
@@ -240,6 +243,84 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
         return false
     }
 
+    const a11yKeydownHandler = $((e: KeyboardEvent) => {
+        const scroller = scrollerRef.value
+        if (!scroller) {
+            return
+        }
+
+        let focusedElem = getFocusedElement()
+        if (!focusedElem) {
+            return
+        }
+
+        if (focusedElem === scroller) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                anchor.value?.focus()
+            }
+        } else {
+            if (!focusedElem.classList.contains(styles.item)) {
+                // We might fall through child element inside item
+                focusedElem = focusedElem.closest(`.${styles.item}`) as HTMLElement
+            }
+
+            if (!focusedElem) {
+                return
+            }
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'ArrowRight': {
+                    e.preventDefault()
+                    e.stopPropagation()
+
+                    if (scrollState.animatedScroll) {
+                        return
+                    }
+
+                    const items = Array.from(getItemElements(scroller))
+                    const currentIndex = items.indexOf(focusedElem)
+                    const offset = e.key === 'ArrowLeft' ? -1 : 1
+                    if (currentIndex === -1) {
+                        return
+                    }
+
+                    const nextIndex = (currentIndex + offset + items.length) % items.length
+                    const nextElem = items[nextIndex]
+
+                    if (nextElem) {
+                        // In gallery, we allow only one element to receive focus
+                        // (e.g. has tabindex=0, all other has tabindex=-1 or none)
+                        // to allow user to escape from gallery with Tab key.
+                        // In order to focus next element, we need to manually set
+                        // tabindex=0 before DOM reconciling to allow browser to
+                        // focus on element.
+                        nextElem.tabIndex = 0
+                        nextElem.focus()
+                        activateItemWithOffset(offset)
+                    }
+
+                    break
+                }
+                case 'Enter':
+                case ' ':
+                    e.preventDefault()
+                    const activeElem = getFocusableElements(focusedElem)
+                    activeElem[0]?.click()
+                    break
+            }
+        }
+    })
+
+    const a11yHandleFocusIn = $(() => {
+        const focusedElem = getFocusedElement()
+        // Ensure that focus came from keyboard navigation
+        if (focusedElem && isFocusVisible(focusedElem)) {
+            focusedFromKeyboard.value = true
+        }
+    })
+
     useTask$(({ track }) => {
         track(() => items)
         viewModel.value = createView(items)
@@ -285,6 +366,13 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
                 if (delta) {
                     scroller.scrollLeft += delta
                 }
+                const newFocusedElem = getFocusedElement()
+                if (focusedFromKeyboard.value && !newFocusedElem) {
+                    // Seems like Qwik moves elements in DOM during view model update,
+                    // which causes focused element to lose focus. Restore it.
+                    elem.focus()
+                }
+
                 // Enable scroll snapping on next tick to avoid misaligned scroller in Safari iOS
                 setTimeout(() => {
                     enableScrollSnapping(scroller)
@@ -341,13 +429,16 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
                 if (!isMobile.value) {
                     rebalanceWhenNeeded()
                 }
-            })
+            }, { passive: true })
 
             scroller.addEventListener('touchstart', () => {
                 scrollState.isTouching = true
             })
             scroller.addEventListener('touchend', () => {
                 scrollState.isTouching = false
+            })
+            scroller.addEventListener('keydown', (e) => {
+                a11yKeydownHandler(e)
             })
 
             // Detect mobile screen size
@@ -359,12 +450,25 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
     })
 
     return <div class={[styles.container, platformClass.value]}>
-        <button class={[styles.control, styles.controlLeft]} onClick$={() => activateItemWithOffset(-1)}>←</button>
-        <button class={[styles.control, styles.controlRight]} onClick$={() => activateItemWithOffset(1)}>→</button>
-        <div class={[styles.scroller, platformClass.value]} ref={scrollerRef}>
+        <div
+            class={[styles.scroller, platformClass.value]}
+            ref={scrollerRef}
+            tabIndex={allowRootFocus ? 0 : -1}
+            role="menu"
+            aria-label={props.ariaLabel}
+            onFocusIn$={a11yHandleFocusIn}
+            onFocusOut$={() => {focusedFromKeyboard.value = false, console.log('Focus out')}}
+        >
             {viewModel.value.items.map(({ id, index }) => {
                 const active = anchorId.value === id
-                return <div class={['infinite-scroll-item', styles.item, platformClass.value]} data-active={active} data-anchor={id} key={id}>
+                return <div
+                    role="menuitem"
+                    class={['infinite-scroll-item', styles.item, platformClass.value]}
+                    data-active={active}
+                    tabIndex={active ? 0 : -1}
+                    data-anchor={id}
+                    key={id}
+                >
                     {render(items[index], active, isMobile.value, id)}
                 </div>
             })}
@@ -374,6 +478,8 @@ export const InfiniteScroll = component$<InfiniteScrollProps<any>>(props => {
                 {items.map((item, ix) => <div class={[styles.indicator, isAnchor(item) && styles.indicatorActive]} key={ix}></div>)}
             </div>
         }
+        <button class={[styles.control, styles.controlLeft]} tabIndex={-1} onClick$={() => activateItemWithOffset(-1)}>←</button>
+        <button class={[styles.control, styles.controlRight]} tabIndex={-1} onClick$={() => activateItemWithOffset(1)}>→</button>
     </div>
 })
 
